@@ -13,6 +13,7 @@ export * from './isAutoSend';
 export * from './isAutoSendDisabled';
 export * from './moveContent';
 export * from './setAutoSend';
+export * from './setRemoveRecentDuplicateTitles';
 export * from './sortContent';
 export * from './sortReportContent';
 export * from './toForm';

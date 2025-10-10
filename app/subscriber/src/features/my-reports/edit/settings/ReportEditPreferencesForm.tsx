@@ -1,5 +1,5 @@
 import { Button } from 'components/button';
-import { hideEmptySections } from 'features/my-reports/utils';
+import { hideEmptySections, setRemoveRecentDuplicateTitles } from 'features/my-reports/utils';
 import React from 'react';
 import { FaInfoCircle, FaSyncAlt } from 'react-icons/fa';
 import { useReports } from 'store/hooks';
@@ -84,6 +84,20 @@ export const ReportEditPreferencesForm = () => {
 
       <div className="frm-in">
         <label>Content filtering:</label>
+        <Row>
+          <Checkbox
+            name="settings.sections.removeRecentDuplicateTitles"
+            label="Remove stories with duplicate titles from the last 3 days"
+            checked={!!values.settings.sections.removeRecentDuplicateTitles}
+            onChange={(e) => {
+              setValues(setRemoveRecentDuplicateTitles(values, e.target.checked));
+            }}
+          />
+          <span className="info">
+            When enabled the report removes stories whose headline already appeared in this report
+            during the past three days, keeping only the most recent version.
+          </span>
+        </Row>
         <FormikCheckbox
           name="settings.content.omitBCUpdates"
           label="Omit all BC Updates and BC Calendars from report"

@@ -4,5 +4,6 @@ import { IReportSectionForm } from './IReportSectionForm';
 
 export interface IReportForm extends Omit<IReportModel, 'sections'> {
   hideEmptySections: boolean;
+  removeRecentDuplicateTitles: boolean;
   sections: IReportSectionForm[];
 }

@@ -12,6 +12,7 @@ export const defaultReport = (ownerId: number, templateId: number): IReportForm 
     isPublic: false,
     sortOrder: 0,
     hideEmptySections: false,
+    removeRecentDuplicateTitles: false,
     settings: {
       from: '',
       subject: {
@@ -39,6 +40,7 @@ export const defaultReport = (ownerId: number, templateId: number): IReportForm 
       },
       sections: {
         usePageBreaks: true,
+        removeRecentDuplicateTitles: false,
       },
       doNotSendEmail: false,
     },

@@ -43,6 +43,16 @@ export const ReportSectionGallery = React.forwardRef<HTMLDivElement, IReportSect
             </Row>
             <Row>
               <FormikCheckbox
+                name={`sections.${index}.settings.removeRecentDuplicateTitles`}
+                label="Remove stories with duplicate titles from the last 3 days"
+              />
+              <span className="info">
+                Skip stories when their headline already appeared in this report during the past
+                three days. The newest version of a headline is kept when duplicates exist.
+              </span>
+            </Row>
+            <Row>
+              <FormikCheckbox
                 name={`sections.${index}.settings.overrideExcludeHistorical`}
                 label={`Include all content from linked ${
                   section.folderId ? 'folder' : 'report'

@@ -657,17 +657,53 @@ public class ReportService : BaseService<Report, int>, IReportService
     public async Task<Report?> AddContentToReportAsync(int id, int? ownerId, IEnumerable<ReportInstanceContent> content)
     {
         var report = FindById(id) ?? throw new NoContentException("Report does not exist");
+        var sectionLookup = report.Sections.ToDictionary(s => s.Name, s => s, StringComparer.OrdinalIgnoreCase);
         var instance = GetCurrentReportInstance(id, ownerId);
         if (instance == null)
         {
             // Create a new instance and populate it with the specified content.
             instance = await GenerateReportInstanceAsync(id, ownerId);
 
-            // Add new content that does not already exist in the report and only for valid sections.
-            var addContent = content.Where(c => report.Sections.Any(s => s.Name == c.SectionName) && !instance.ContentManyToMany.Any(ic => ic.SectionName == c.SectionName && ic.ContentId == c.ContentId));
-            if (addContent.Any())
+            var additions = content
+                .Select(c => new
+                {
+                    SectionKey = (c.SectionName ?? string.Empty).Trim(),
+                    Item = c
+                })
+                .Where(c => !string.IsNullOrWhiteSpace(c.SectionKey)
+                    && sectionLookup.TryGetValue(c.SectionKey, out _)
+                    && !instance.ContentManyToMany.Any(ic => string.Equals(ic.SectionName, c.SectionKey, StringComparison.OrdinalIgnoreCase) && ic.ContentId == c.Item.ContentId))
+                .Select(c =>
+                {
+                    var sectionName = sectionLookup.TryGetValue(c.SectionKey, out var section) ? section.Name : c.SectionKey;
+                    return new ReportInstanceContent(instance.Id, c.Item.ContentId, sectionName, c.Item.SortOrder);
+                })
+                .GroupBy(a => new { a.ContentId, Section = a.SectionName ?? string.Empty })
+                .Select(g => g.First())
+                .ToList();
+
+            if (additions.Any())
             {
-                instance.ContentManyToMany.AddRange(addContent);
+                var maxSortPerSection = instance.ContentManyToMany
+                    .GroupBy(ric => ric.SectionName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.Any() ? g.Max(x => x.SortOrder) : -1, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var group in additions.GroupBy(a => a.SectionName ?? string.Empty, StringComparer.OrdinalIgnoreCase))
+                {
+                    var start = maxSortPerSection.TryGetValue(group.Key, out var max) ? max : -1;
+                    foreach (var addition in group.OrderBy(a => a.SortOrder))
+                        addition.SortOrder = ++start;
+                    maxSortPerSection[group.Key] = start;
+                }
+
+                additions.ForEach(a =>
+                {
+                    a.Instance = null;
+                    a.Content = null;
+                });
+
+                instance.ContentManyToMany.AddRange(additions);
+                _ = ResolveRecentDuplicateTitlesForInstance(report, instance);
 
                 instance = _reportInstanceService.AddAndSave(instance);
                 report.Instances.Add(instance);
@@ -675,11 +711,46 @@ public class ReportService : BaseService<Report, int>, IReportService
         }
         else
         {
-            // Add new content that does not already exist in the report and only for valid sections.
-            var addContent = content.Where(c => report.Sections.Any(s => s.Name == c.SectionName) && !instance.ContentManyToMany.Any(ic => ic.SectionName == c.SectionName && ic.ContentId == c.ContentId));
-            if (addContent.Any())
+            var additions = content
+                .Select(c => new
+                {
+                    SectionKey = (c.SectionName ?? string.Empty).Trim(),
+                    Item = c
+                })
+                .Where(c => !string.IsNullOrWhiteSpace(c.SectionKey)
+                    && sectionLookup.TryGetValue(c.SectionKey, out _)
+                    && !instance.ContentManyToMany.Any(ic => string.Equals(ic.SectionName, c.SectionKey, StringComparison.OrdinalIgnoreCase) && ic.ContentId == c.Item.ContentId))
+                .Select(c =>
+                {
+                    var sectionName = sectionLookup.TryGetValue(c.SectionKey, out var section) ? section.Name : c.SectionKey;
+                    return new ReportInstanceContent(instance.Id, c.Item.ContentId, sectionName, c.Item.SortOrder);
+                })
+                .GroupBy(a => new { a.ContentId, Section = a.SectionName ?? string.Empty })
+                .Select(g => g.First())
+                .ToList();
+
+            if (additions.Any())
             {
-                instance.ContentManyToMany.AddRange(addContent);
+                var maxSortPerSection = instance.ContentManyToMany
+                    .GroupBy(ric => ric.SectionName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.Any() ? g.Max(x => x.SortOrder) : -1, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var group in additions.GroupBy(a => a.SectionName ?? string.Empty, StringComparer.OrdinalIgnoreCase))
+                {
+                    var start = maxSortPerSection.TryGetValue(group.Key, out var max) ? max : -1;
+                    foreach (var addition in group.OrderBy(a => a.SortOrder))
+                        addition.SortOrder = ++start;
+                    maxSortPerSection[group.Key] = start;
+                }
+
+                additions.ForEach(a =>
+                {
+                    a.Instance = null;
+                    a.Content = null;
+                });
+
+                instance.ContentManyToMany.AddRange(additions);
+                _ = ResolveRecentDuplicateTitlesForInstance(report, instance);
                 instance = _reportInstanceService.UpdateAndSave(instance, true);
             }
         }
@@ -698,10 +769,10 @@ public class ReportService : BaseService<Report, int>, IReportService
     /// <returns></returns>
     public async Task<ReportContentMutation?> FastAddContentToReportAsync(int id, int? ownerId, IEnumerable<ReportInstanceContent> content)
     {
-        if (!this.Context.Reports.AsNoTracking().Any(r => r.Id == id))
-            throw new NoContentException("Report does not exist");
-
-        var validSections = GetReportSectionNames(id);
+        var report = FindById(id) ?? throw new NoContentException("Report does not exist");
+        var sectionLookup = report.Sections
+            .Where(s => !string.IsNullOrWhiteSpace(s.Name))
+            .ToDictionary(s => s.Name, s => s, StringComparer.OrdinalIgnoreCase);
 
         var instance = GetCurrentReportInstanceMetadata(id, ownerId);
         var instanceCreated = false;
@@ -725,8 +796,19 @@ public class ReportService : BaseService<Report, int>, IReportService
         }
 
         var additions = content
-            .Where(c => !string.IsNullOrWhiteSpace(c.SectionName) && validSections.Contains(c.SectionName))
-            .Select(c => new ReportInstanceContent(instance.Id, c.ContentId, c.SectionName, c.SortOrder))
+            .Select(c => new
+            {
+                SectionKey = (c.SectionName ?? string.Empty).Trim(),
+                Item = c
+            })
+            .Where(c => !string.IsNullOrWhiteSpace(c.SectionKey) && sectionLookup.TryGetValue(c.SectionKey, out _))
+            .Select(c =>
+            {
+                var sectionName = sectionLookup.TryGetValue(c.SectionKey, out var section) ? section.Name : c.SectionKey;
+                return new ReportInstanceContent(instance.Id, c.Item.ContentId, sectionName, c.Item.SortOrder);
+            })
+            .GroupBy(a => new { a.ContentId, Section = a.SectionName ?? string.Empty })
+            .Select(g => g.First())
             .ToList();
 
         if (!additions.Any())
@@ -765,6 +847,10 @@ public class ReportService : BaseService<Report, int>, IReportService
 
         this.Context.ReportInstanceContents.AddRange(additions);
         this.CommitTransaction();
+
+        var resolvedInstance = CleanupRecentDuplicateTitles(report, ownerId);
+        if (resolvedInstance != null)
+            instance = resolvedInstance;
 
         var additionKeys = additions
             .Select(a => (a.ContentId, a.SectionName ?? string.Empty))
@@ -909,15 +995,6 @@ public class ReportService : BaseService<Report, int>, IReportService
         return instance.Status >= ReportStatus.Accepted && instance.Status != ReportStatus.Reopen;
     }
 
-    private HashSet<string> GetReportSectionNames(int reportId)
-    {
-        return this.Context.ReportSections
-            .AsNoTracking()
-            .Where(rs => rs.ReportId == reportId)
-            .Select(rs => rs.Name)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-    }
-
     /// <summary>
     /// Find the previous report instance created for the specified report 'id' and 'ownerId'.
     /// Find the previous report instance that was sent.
@@ -989,10 +1066,31 @@ public class ReportService : BaseService<Report, int>, IReportService
             : Array.Empty<long>();
 
         var excludeAboveSectionContentIds = new List<long>();
+        var recentDuplicateThreshold = DateTime.UtcNow.AddDays(-3);
+        var recentHeadlines = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        var pendingHeadlines = new List<(string Headline, DateTime Timestamp)>();
+        var recentHistoryLoaded = false;
+
+        void EnsureRecentHeadlineHistoryLoaded()
+        {
+            if (recentHistoryLoaded) return;
+            var history = LoadRecentHeadlineHistory(report.Id, ownerId, recentDuplicateThreshold);
+            foreach (var entry in history)
+                recentHeadlines[entry.Key] = entry.Value;
+            recentHistoryLoaded = true;
+            FlushPendingHeadlines(recentHeadlines, pendingHeadlines);
+        }
+
+        void TrackSectionHeadlines<T>(IEnumerable<T> items, Func<T, string?> headlineSelector, Func<T, DateTime?> timestampSelector)
+        {
+            TrackHeadlines(items, headlineSelector, timestampSelector, recentHeadlines, pendingHeadlines, recentHistoryLoaded);
+        }
 
         foreach (var section in report.Sections.OrderBy(s => s.SortOrder))
         {
             var sectionSettings = JsonSerializer.Deserialize<ReportSectionSettingsModel>(section.Settings.ToJson(), _serializerOptions) ?? new();
+            var applyRecentDuplicateCheck = sectionSettings.RemoveRecentDuplicateTitles
+                || reportSettings.Sections.RemoveRecentDuplicateTitles;
 
             // Content in a folder is added first.
             if (section.FolderId.HasValue)
@@ -1029,6 +1127,21 @@ public class ReportService : BaseService<Report, int>, IReportService
                 var content = query
                     .OrderBy(fc => fc.SortOrder)
                     .ToArray();
+
+                if (applyRecentDuplicateCheck)
+                {
+                    EnsureRecentHeadlineHistoryLoaded();
+                    content = FilterRecentDuplicateTitles(
+                        content,
+                        fc => fc.Content?.Headline,
+                        fc => GetContentTimestamp(fc.Content),
+                        recentHeadlines).ToArray();
+                }
+
+                TrackSectionHeadlines(
+                    content,
+                    fc => fc.Content?.Headline,
+                    fc => GetContentTimestamp(fc.Content));
 
                 var folderContent = new Elastic.Models.SearchResultModel<API.Areas.Services.Models.Content.ContentModel>();
                 folderContent.Hits.Hits = content
@@ -1073,6 +1186,23 @@ public class ReportService : BaseService<Report, int>, IReportService
                     await _elasticClient.SearchAsync<API.Areas.Services.Models.Content.ContentModel>(defaultIndex, query));
                 var contentHits = content.Hits.Hits.ToArray();
 
+                if (applyRecentDuplicateCheck)
+                {
+                    EnsureRecentHeadlineHistoryLoaded();
+                    var filteredHits = FilterRecentDuplicateTitles(
+                        contentHits,
+                        h => h.Source?.Headline,
+                        h => GetContentTimestamp(h.Source),
+                        recentHeadlines);
+                    content.Hits.Hits = filteredHits;
+                    contentHits = filteredHits.ToArray();
+                }
+
+                TrackSectionHeadlines(
+                    content.Hits.Hits,
+                    h => h.Source?.Headline,
+                    h => GetContentTimestamp(h.Source));
+
                 // Fetch custom content versions for the requestor.
                 var contentIds = content.Hits.Hits.Select(h => h.Source.Id).Distinct().ToArray();
                 var results = this.Context.Contents.Where(c => contentIds.Contains(c.Id)).Select(c => new { c.Id, c.Versions }).ToArray();
@@ -1115,6 +1245,10 @@ public class ReportService : BaseService<Report, int>, IReportService
                         {
                             Source = new API.Areas.Services.Models.Content.ContentModel(c.Content!, _serializerOptions)
                         });
+                    TrackSectionHeadlines(
+                        sectionContent.Hits.Hits,
+                        h => h.Source?.Headline,
+                        h => GetContentTimestamp(h.Source));
                     searchResults.Add(section.Name, sectionContent);
                     var contentIds = sectionContent.Hits.Hits.Select(h => h.Source.Id).Distinct().ToArray();
                     excludeAboveSectionContentIds.AddRange(contentIds.Except(excludeAboveSectionContentIds));
@@ -1148,6 +1282,270 @@ public class ReportService : BaseService<Report, int>, IReportService
             return await operation();
         }
     }
+
+    #region Helpers
+    private Dictionary<long, (string Headline, DateTime? Timestamp)> GetContentHeadlineInfo(IEnumerable<long> contentIds)
+    {
+        var ids = contentIds?
+            .Where(id => id > 0)
+            .Distinct()
+            .ToArray();
+
+        if (ids == null || ids.Length == 0)
+            return new Dictionary<long, (string Headline, DateTime? Timestamp)>();
+
+        return this.Context.Contents
+            .AsNoTracking()
+            .Where(c => ids.Contains(c.Id))
+            .Select(c => new
+            {
+                c.Id,
+                c.Headline,
+                c.PublishedOn,
+                c.PostedOn,
+                UpdatedOn = (DateTime?)c.UpdatedOn,
+                CreatedOn = (DateTime?)c.CreatedOn
+            })
+            .ToArray()
+            .Where(c => !string.IsNullOrWhiteSpace(c.Headline))
+            .ToDictionary(
+                c => c.Id,
+                c => (c.Headline!.Trim(), c.PublishedOn ?? c.PostedOn ?? c.UpdatedOn ?? c.CreatedOn),
+                EqualityComparer<long>.Default);
+    }
+
+    private bool ResolveRecentDuplicateTitlesForInstance(Report report, ReportInstance instance)
+    {
+        if (!instance.ContentManyToMany.Any()) return false;
+
+        var reportSettings = JsonSerializer.Deserialize<ReportSettingsModel>(report.Settings.ToJson(), _serializerOptions) ?? new();
+        var sectionSettings = report.Sections.ToDictionary(
+            s => s.Name,
+            s => JsonSerializer.Deserialize<ReportSectionSettingsModel>(s.Settings.ToJson(), _serializerOptions) ?? new(),
+            StringComparer.OrdinalIgnoreCase);
+
+        var sectionsToEvaluate = instance.ContentManyToMany
+            .Select(c => c.SectionName ?? string.Empty)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(name =>
+                sectionSettings.TryGetValue(name, out var settings) &&
+                (settings.RemoveRecentDuplicateTitles || reportSettings.Sections.RemoveRecentDuplicateTitles))
+            .ToArray();
+
+        if (sectionsToEvaluate.Length == 0) return false;
+
+        var threshold = DateTime.UtcNow.AddDays(-3);
+        var contentInfo = GetContentHeadlineInfo(instance.ContentManyToMany.Select(c => c.ContentId));
+        var removals = new List<ReportInstanceContent>();
+
+        foreach (var sectionName in sectionsToEvaluate)
+        {
+            var sectionRecords = instance.ContentManyToMany
+                .Where(c => string.Equals(c.SectionName, sectionName, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(c => c.SortOrder)
+                .ToList();
+
+            if (sectionRecords.Count <= 1) continue;
+
+            var enriched = sectionRecords
+                .Select(record =>
+                {
+                    contentInfo.TryGetValue(record.ContentId, out var info);
+                    var normalized = NormalizeHeadline(info.Headline);
+                    var timestamp = info.Timestamp ?? DateTime.MinValue;
+                    return new { Record = record, Headline = normalized, Timestamp = timestamp };
+                })
+                .Where(x => !string.IsNullOrWhiteSpace(x.Headline))
+                .ToList();
+
+            if (!enriched.Any()) continue;
+
+            var duplicateGroups = enriched
+                .GroupBy(x => x.Headline!, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var group in duplicateGroups)
+            {
+                if (group.Count() <= 1) continue;
+
+                var ordered = group
+                    .OrderByDescending(x => x.Timestamp)
+                    .ThenByDescending(x => x.Record.ContentId)
+                    .ThenByDescending(x => x.Record.SortOrder)
+                    .ToList();
+
+                if (ordered[0].Timestamp < threshold) continue;
+
+                removals.AddRange(ordered.Skip(1).Select(x => x.Record));
+            }
+        }
+
+        if (!removals.Any()) return false;
+
+        removals.ForEach(record => instance.ContentManyToMany.Remove(record));
+
+        foreach (var sectionName in removals.Select(r => r.SectionName).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var sectionRecords = instance.ContentManyToMany
+                .Where(c => string.Equals(c.SectionName, sectionName, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(c => c.SortOrder)
+                .ToList();
+
+            for (var index = 0; index < sectionRecords.Count; index++)
+                sectionRecords[index].SortOrder = index;
+        }
+
+        return true;
+    }
+
+    private ReportInstance? CleanupRecentDuplicateTitles(Report report, int? ownerId, ReportInstance? instance = null)
+    {
+        instance ??= GetCurrentReportInstance(report.Id, ownerId, includeContent: true);
+        if (instance == null) return null;
+
+        var modified = ResolveRecentDuplicateTitlesForInstance(report, instance);
+        return modified ? _reportInstanceService.UpdateAndSave(instance, true) : instance;
+    }
+
+    private Dictionary<string, DateTime> LoadRecentHeadlineHistory(int reportId, int? ownerId, DateTime threshold)
+    {
+        var query = this.Context.ReportInstanceContents
+            .AsNoTracking()
+            .Include(ric => ric.Instance)
+            .Include(ric => ric.Content)
+            .Where(ric => ric.Instance != null
+                && ric.Content != null
+                && ric.Instance.ReportId == reportId
+                && (ric.Instance.PublishedOn ?? ric.Instance.SentOn ?? ric.Instance.CreatedOn) >= threshold
+                && !string.IsNullOrWhiteSpace(ric.Content.Headline));
+
+        if (ownerId.HasValue)
+            query = query.Where(ric => ric.Instance!.OwnerId == ownerId);
+
+        var history = query
+            .Select(ric => new
+            {
+                Headline = ric.Content!.Headline,
+                Timestamp = GetContentTimestamp(ric.Content!)
+                    ?? ric.Instance!.PublishedOn
+                    ?? ric.Instance!.SentOn
+                    ?? (DateTime?)ric.Instance!.CreatedOn
+            })
+            .ToArray()
+            .GroupBy(r => NormalizeHeadline(r.Headline))
+            .Where(g => !string.IsNullOrEmpty(g.Key))
+            .ToDictionary(
+                g => g.Key!,
+                g => g.Max(r => r.Timestamp ?? DateTime.MinValue),
+                StringComparer.OrdinalIgnoreCase);
+
+        return history;
+    }
+
+    private static void FlushPendingHeadlines(
+        Dictionary<string, DateTime> recentHeadlines,
+        List<(string Headline, DateTime Timestamp)> pendingHeadlines)
+    {
+        if (!pendingHeadlines.Any()) return;
+        foreach (var pending in pendingHeadlines)
+        {
+            if (!recentHeadlines.TryGetValue(pending.Headline, out var existing) || pending.Timestamp > existing)
+                recentHeadlines[pending.Headline] = pending.Timestamp;
+        }
+        pendingHeadlines.Clear();
+    }
+
+    private static void TrackHeadlines<T>(
+        IEnumerable<T> items,
+        Func<T, string?> headlineSelector,
+        Func<T, DateTime?> timestampSelector,
+        Dictionary<string, DateTime> recentHeadlines,
+        List<(string Headline, DateTime Timestamp)> pendingHeadlines,
+        bool historyLoaded)
+    {
+        foreach (var item in items)
+        {
+            var normalized = NormalizeHeadline(headlineSelector(item));
+            if (string.IsNullOrWhiteSpace(normalized)) continue;
+            var timestamp = timestampSelector(item) ?? DateTime.MinValue;
+
+            if (historyLoaded)
+            {
+                if (!recentHeadlines.TryGetValue(normalized, out var existing) || timestamp > existing)
+                    recentHeadlines[normalized] = timestamp;
+            }
+            else
+            {
+                pendingHeadlines.Add((normalized, timestamp));
+            }
+        }
+    }
+
+    private static List<T> FilterRecentDuplicateTitles<T>(
+        IEnumerable<T> items,
+        Func<T, string?> headlineSelector,
+        Func<T, DateTime?> timestampSelector,
+        Dictionary<string, DateTime> recentHeadlines)
+    {
+        var results = new List<T>();
+        var seenInBatch = new Dictionary<string, (DateTime Timestamp, int Index)>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in items)
+        {
+            var normalized = NormalizeHeadline(headlineSelector(item));
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                results.Add(item);
+                continue;
+            }
+
+            var timestamp = timestampSelector(item) ?? DateTime.MinValue;
+
+            if (recentHeadlines.TryGetValue(normalized, out var previousTimestamp) && timestamp <= previousTimestamp)
+                continue;
+
+            if (seenInBatch.TryGetValue(normalized, out var existing))
+            {
+                if (timestamp <= existing.Timestamp) continue;
+
+                results[existing.Index] = item;
+                seenInBatch[normalized] = (timestamp, existing.Index);
+            }
+            else
+            {
+                results.Add(item);
+                seenInBatch[normalized] = (timestamp, results.Count - 1);
+            }
+
+            recentHeadlines[normalized] = timestamp;
+        }
+
+        return results;
+    }
+
+    private static string? NormalizeHeadline(string? headline)
+    {
+        if (string.IsNullOrWhiteSpace(headline)) return null;
+        return headline.Trim();
+    }
+
+    private static DateTime? GetContentTimestamp(Entities.Content? content)
+    {
+        if (content == null) return null;
+        return content.PublishedOn
+            ?? content.PostedOn
+            ?? (DateTime?)content.UpdatedOn
+            ?? (DateTime?)content.CreatedOn;
+    }
+
+    private static DateTime? GetContentTimestamp(API.Areas.Services.Models.Content.ContentModel? content)
+    {
+        if (content == null) return null;
+        return content.PublishedOn
+            ?? content.PostedOn
+            ?? content.UpdatedOn
+            ?? content.CreatedOn;
+    }
+    #endregion
 
     /// <summary>
     /// Find content with Elasticsearch for the specified `reportInstance` and `section`.
@@ -1200,12 +1598,38 @@ public class ReportService : BaseService<Report, int>, IReportService
 
         var excludeContentIds = excludeHistoricalContentIds.AppendRange(excludeReportContentIds).Distinct().ToArray();
         var excludeAboveSectionContentIds = new List<long>();
+        var recentDuplicateThreshold = DateTime.UtcNow.AddDays(-3);
+        var recentHeadlines = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        var pendingHeadlines = new List<(string Headline, DateTime Timestamp)>();
+        var recentHistoryLoaded = false;
+
+        void EnsureRecentHeadlineHistoryLoaded()
+        {
+            if (recentHistoryLoaded) return;
+            var history = LoadRecentHeadlineHistory(report.Id, ownerId, recentDuplicateThreshold);
+            foreach (var entry in history)
+                recentHeadlines[entry.Key] = entry.Value;
+            recentHistoryLoaded = true;
+            FlushPendingHeadlines(recentHeadlines, pendingHeadlines);
+        }
+
+        void TrackSectionHeadlines<T>(IEnumerable<T> items, Func<T, string?> headlineSelector, Func<T, DateTime?> timestampSelector)
+        {
+            TrackHeadlines(items, headlineSelector, timestampSelector, recentHeadlines, pendingHeadlines, recentHistoryLoaded);
+        }
 
         // Identify any content above that may need to be excluded.
         if (reportInstance != null)
             excludeAboveSectionContentIds.AddRange(contentAbove.Select(c => c.ContentId).ToArray());
 
+        TrackSectionHeadlines(
+            currentInstanceContent,
+            c => c.Content?.Headline,
+            c => GetContentTimestamp(c.Content));
+
         var sectionSettings = JsonSerializer.Deserialize<ReportSectionSettingsModel>(section.Settings.ToJson(), _serializerOptions) ?? new();
+        var applyRecentDuplicateCheck = sectionSettings.RemoveRecentDuplicateTitles
+            || reportSettings.Sections.RemoveRecentDuplicateTitles;
 
         if (section.FolderId.HasValue)
         {
@@ -1235,6 +1659,21 @@ public class ReportService : BaseService<Report, int>, IReportService
             var content = query
                 .OrderBy(fc => fc.SortOrder)
                 .ToArray();
+
+            if (applyRecentDuplicateCheck)
+            {
+                EnsureRecentHeadlineHistoryLoaded();
+                content = FilterRecentDuplicateTitles(
+                    content,
+                    fc => fc.Content?.Headline,
+                    fc => GetContentTimestamp(fc.Content),
+                    recentHeadlines).ToArray();
+            }
+
+            TrackSectionHeadlines(
+                content,
+                fc => fc.Content?.Headline,
+                fc => GetContentTimestamp(fc.Content));
 
             var folderContent = new Elastic.Models.SearchResultModel<API.Areas.Services.Models.Content.ContentModel>();
             folderContent.Hits.Hits = content
@@ -1272,6 +1711,24 @@ public class ReportService : BaseService<Report, int>, IReportService
             var defaultIndex = filterSettings.SearchUnpublished ? _elasticOptions.ContentIndex : _elasticOptions.PublishedIndex;
             var content = await RetryElasticsearchQueryAsync(async () =>
                 await _elasticClient.SearchAsync<API.Areas.Services.Models.Content.ContentModel>(defaultIndex, query));
+            var contentHits = content.Hits.Hits.ToArray();
+
+            if (applyRecentDuplicateCheck)
+            {
+                EnsureRecentHeadlineHistoryLoaded();
+                var filteredHits = FilterRecentDuplicateTitles(
+                    contentHits,
+                    h => h.Source?.Headline,
+                    h => GetContentTimestamp(h.Source),
+                    recentHeadlines);
+                content.Hits.Hits = filteredHits;
+                contentHits = filteredHits.ToArray();
+            }
+
+            TrackSectionHeadlines(
+                content.Hits.Hits,
+                h => h.Source?.Headline,
+                h => GetContentTimestamp(h.Source));
 
             // Fetch custom content versions for the requestor.
             var contentIds = content.Hits.Hits.Select(h => h.Source.Id).Distinct().ToArray();

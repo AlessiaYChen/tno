@@ -12,9 +12,14 @@ import { sortContent } from './sortContent';
  * @returns a new form.
  */
 export const toForm = (report: IReportModel, updateSortOrder: boolean = false): IReportForm => {
+  const sectionDuplicateFlag = report.sections.some(
+    (section) => !!section.settings?.removeRecentDuplicateTitles,
+  );
   return {
     ...report,
     hideEmptySections: getHideEmpty(report.sections),
+    removeRecentDuplicateTitles:
+      report.settings?.sections?.removeRecentDuplicateTitles ?? sectionDuplicateFlag,
     sections: report.sections.map((s) => ({
       ...s,
     })),
