@@ -243,7 +243,7 @@ public class ReportHelper : IReportHelper
     }
 
     /// <summary>
-    /// When a section has Settings.RemoveRecentDuplicateTitles enabled, remove items whose headline
+    /// When a section has Settings.RemoveDuplicateTitles enabled, remove items whose headline
     /// duplicates another story's headline in the overall report, keeping only the earliest story.
     /// Earliest is determined by PublishedOn, then PostedOn, then SortOrder as tie-breaker.
     /// </summary>
@@ -276,10 +276,10 @@ public class ReportHelper : IReportHelper
             }
         }
 
-        // Now filter sections that have RemoveRecentDuplicateTitles enabled
+        // Now filter sections that have RemoveDuplicateTitles enabled
         foreach (var section in sections.Values)
         {
-            if (!section.Settings.RemoveRecentDuplicateTitles || section.SectionType != TNO.Entities.ReportSectionType.Content) continue;
+            if (!section.Settings.RemoveDuplicateTitles || section.SectionType != TNO.Entities.ReportSectionType.Content) continue;
 
             var filtered = section.Content.Where(item =>
             {
