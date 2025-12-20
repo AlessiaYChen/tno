@@ -27,6 +27,7 @@ public class StationTextProfile
     public double ChunkOverlapRatio { get; set; } = 0.5;
     public double HeuristicBoundaryWeight { get; set; } = 0.15;
     public Dictionary<string, string> KeywordCategories { get; set; } = new();
+    public double? LlmBoundaryScoreThreshold { get; set; } = null;
     public bool LlmSegmentation { get; set; } = true;
     public string LlmModel { get; set; } = string.Empty;
     public string LlmPrompt { get; set; } = string.Empty;
@@ -41,3 +42,5 @@ public class StationHeuristicProfile
     public Dictionary<string, double> BoundaryWeights { get; set; } = new();
     public List<string> KeywordPatterns { get; set; } = new();
 }
+
+

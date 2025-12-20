@@ -13,3 +13,5 @@ public class ClipSegmentationSettings
     public double? HeuristicBoundaryWeight { get; set; }
     public IReadOnlyDictionary<string, string>? KeywordCategories { get; set; }
 }
+
+

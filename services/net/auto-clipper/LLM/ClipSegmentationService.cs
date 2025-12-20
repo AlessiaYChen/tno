@@ -143,7 +143,7 @@ Transcript:
         {
             var sentence = transcript[i];
             if (string.IsNullOrWhiteSpace(sentence.Text)) continue;
-            var line = $"{i + 1}. {FormatTimestamp(sentence.Start)} --> {FormatTimestamp(sentence.End)} :: {sentence.Text.Trim()}";
+            var line = $"{i + 1}. {FormatTimestamp(sentence.Start)} --> {FormatTimestamp(sentence.End)} [Speaker: {sentence.Speaker ?? "Unknown"}] :: {sentence.Text.Trim()}";
             if (builder.Length + line.Length > limit)
                 break;
             builder.AppendLine(line);
@@ -331,17 +331,27 @@ Transcript:
             filtered.Add(new BoundaryCandidate(0, "Full Program", "AutoClipper fallback clip", 1));
 
         var list = new List<ClipDefinition>();
+        string? lastSentenceKey = null;
+        TimeSpan lastAddedStart = TimeSpan.MinValue;
         for (var i = 0; i < filtered.Count; i++)
         {
             var boundary = filtered[i];
-            var start = transcript[boundary.Index].Start;
+            var boundarySentence = transcript[boundary.Index];
+            var start = boundarySentence.Start;
             var endIndex = i + 1 < filtered.Count ? filtered[i + 1].Index : transcript.Count - 1;
             var end = i + 1 < filtered.Count ? transcript[filtered[i + 1].Index].Start : transcript[^1].End;
             if (end <= start) continue;
+
+            var normalizedSentence = NormalizeSentence(boundarySentence.Text);
+            if (!string.IsNullOrWhiteSpace(normalizedSentence) && lastSentenceKey == normalizedSentence && lastAddedStart != TimeSpan.MinValue && (start - lastAddedStart).TotalSeconds < 5)
+                continue;
+
             var title = string.IsNullOrWhiteSpace(boundary.Title) ? $"Clip {i + 1}" : boundary.Title;
             var summary = string.IsNullOrWhiteSpace(boundary.Summary) ? string.Empty : boundary.Summary;
             var category = DetermineCategory(boundary, heuristicHits, boundary.Index, endIndex) ?? "News";
             list.Add(new ClipDefinition(title, summary, start, end, category));
+            lastSentenceKey = normalizedSentence ?? lastSentenceKey;
+            lastAddedStart = start;
             _logger.LogInformation("Boundary {BoundaryIndex}: {Title} ({Start}-{End}) Score={Score:0.00} Heuristic={IsHeuristic} Category={Category}", boundary.Index + 1, title, start, end, boundary.Score, boundary.IsHeuristic, category);
         }
 
@@ -350,6 +360,18 @@ Transcript:
 
 
 
+
+    private static string? NormalizeSentence(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var builder = new StringBuilder(text.Length);
+        foreach (var ch in text.ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(ch)) builder.Append(ch);
+            else if (char.IsWhiteSpace(ch)) builder.Append(' ');
+        }
+        return builder.ToString().Trim();
+    }
 
     private string? DetermineCategory(BoundaryCandidate boundary, IReadOnlyList<HeuristicHit>? hits, int startIndex, int endIndex)
     {
@@ -429,6 +451,5 @@ Transcript:
         return result;
     }
 }
-
 
 
