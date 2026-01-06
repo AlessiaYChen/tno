@@ -14,9 +14,21 @@ public class AutoClipperOptions : ServiceOptions
     public string OldTnoContentTagName { get; set; } = "";
     public string AzureSpeechKey { get; set; } = "";
     public string AzureSpeechRegion { get; set; } = "";
+    public string AzureSpeechEndpoint { get; set; } = string.Empty;
     public string DefaultTranscriptLanguage { get; set; } = "en-US";
     public int AzureSpeechMaxRetries { get; set; } = 3;
     public int AzureSpeechRetryDelaySeconds { get; set; } = 5;
+    public int AzureSpeechBatchPollIntervalSeconds { get; set; } = 15;
+    public int AzureSpeechBatchTimeoutMinutes { get; set; } = 60;
+    public int AzureSpeechBatchMaxConcurrentJobs { get; set; } = 2;
+    public bool AzureSpeechBatchWordLevelTimestampsEnabled { get; set; } = true;
+    public bool AzureSpeechBatchDiarizationEnabled { get; set; } = true;
+    public string AzureSpeechBatchProfanityFilterMode { get; set; } = "Masked";
+    public string AzureSpeechBatchPunctuationMode { get; set; } = "DictatedAndAutomatic";
+    public bool AzureSpeechBatchDeleteInputOnCompletion { get; set; } = true;
+    public string AzureBlobConnectionString { get; set; } = string.Empty;
+    public string AzureBlobInputContainer { get; set; } = "autoclipper-input";
+    public int AzureBlobSasValidityMinutes { get; set; } = 180;
 
 
     public string LlmApiUrl { get; set; } = "";

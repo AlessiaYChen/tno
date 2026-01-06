@@ -4,7 +4,8 @@ sample_rate: 16000
 transcription:
   provider: azure_speech
   diarization: true
-  max_speakers: 10
+  min_speakers: 1
+  max_speakers: 20
   language: en-CA
 text:
   chunk_size_s: 3.0

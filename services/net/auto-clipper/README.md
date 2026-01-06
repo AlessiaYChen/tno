@@ -19,6 +19,8 @@ segments the transcript into clips using a boundary-aware LLM workflow boosted b
 ## Configuration
 
 Important Service__ env vars:
-- Service__AzureSpeechKey / Service__AzureSpeechRegion
+- Service__AzureSpeechKey / Service__AzureSpeechRegion (or Service__AzureSpeechEndpoint)
+- Service__AzureBlobConnectionString / Service__AzureBlobInputContainer (staging uploads for batch jobs)
+- Service__AzureSpeechBatchPollIntervalSeconds, Service__AzureSpeechBatchTimeoutMinutes, Service__AzureSpeechBatchMaxConcurrentJobs
 - Service__LlmApiUrl, Service__LlmApiKey, Service__LlmDeployment, Service__LlmApiVersion
 - Service__StationConfigPath (optional override for station YAML directory)

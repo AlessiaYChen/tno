@@ -54,7 +54,11 @@ public class AutoClipperService : KafkaConsumerService
             .AddSingleton<IAudioNormalizer, AudioNormalizer>()
             .AddSingleton<ClipProcessingPipeline>();
 
-        services.AddSingleton<IAzureSpeechTranscriptionService, AzureSpeechTranscriptionService>();
+        services
+            .AddSingleton<IAzureBlobStagingService, AzureBlobStagingService>()
+            .AddSingleton<IAzureSpeechTranscriptionService, AzureSpeechTranscriptionService>();
+
+        services.AddHttpClient<IAzureSpeechBatchClient, AzureSpeechBatchClient>();
         services.AddHttpClient<IClipSegmentationService, ClipSegmentationService>();
 
         // TODO: Figure out how to validate without resulting in aggregating the config values.

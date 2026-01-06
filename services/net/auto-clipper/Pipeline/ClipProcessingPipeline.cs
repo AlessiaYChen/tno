@@ -42,6 +42,7 @@ public class ClipProcessingPipeline
         {
             Language = language,
             EnableSpeakerDiarization = context.StationProfile.Transcription.Diarization,
+            MinSpeakerCount = context.StationProfile.Transcription.MinSpeakers,
             SpeakerCount = context.StationProfile.Transcription.MaxSpeakers,
             DiarizationMode = context.StationProfile.Transcription.DiarizationMode
         };

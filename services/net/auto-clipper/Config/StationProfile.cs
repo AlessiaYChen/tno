@@ -15,6 +15,7 @@ public class StationTranscriptionProfile
 {
     public string Provider { get; set; } = "azure_speech";
     public bool Diarization { get; set; }
+    public int? MinSpeakers { get; set; }
     public int? MaxSpeakers { get; set; }
     public string? DiarizationMode { get; set; } = "online";
     public string Language { get; set; } = "en-US";

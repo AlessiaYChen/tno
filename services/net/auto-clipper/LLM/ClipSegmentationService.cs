@@ -281,7 +281,7 @@ Transcript:
             }
 
             var threshold = Math.Clamp(_options.LlmBoundaryScoreThreshold, 0, 1);
-            return CreateClipDefinitions(transcript, candidates, threshold, heuristicHits);
+            return CreateClipDefinitions(transcript, candidates, threshold, heuristicHits, settings);
         }
         catch (Exception ex)
         {
@@ -290,7 +290,12 @@ Transcript:
         }
     }
 
-    private IReadOnlyList<ClipDefinition> CreateClipDefinitions(IReadOnlyList<TimestampedTranscript> transcript, List<BoundaryCandidate> candidates, double threshold, IReadOnlyList<HeuristicHit> heuristicHits)
+    private IReadOnlyList<ClipDefinition> CreateClipDefinitions(
+        IReadOnlyList<TimestampedTranscript> transcript,
+        List<BoundaryCandidate> candidates,
+        double threshold,
+        IReadOnlyList<HeuristicHit> heuristicHits,
+        ClipSegmentationSettings? settings)
     {
         if (transcript == null || transcript.Count == 0)
             return Array.Empty<ClipDefinition>();
@@ -322,10 +327,22 @@ Transcript:
             ordered.Insert(0, ordered[0] with { Index = 0, Score = 1, IsHeuristic = false });
 
         var filtered = new List<BoundaryCandidate>();
+        var heuristicThreshold = Math.Max(0.01, settings?.HeuristicBoundaryWeight ?? 0.1);
         foreach (var candidate in ordered)
         {
-            if (candidate.Index == 0 || candidate.Score >= threshold)
+            if (candidate.Index == 0)
+            {
                 filtered.Add(candidate);
+                continue;
+            }
+
+            var passes = !candidate.IsHeuristic && candidate.Score >= threshold;
+            if (candidate.IsHeuristic)
+            {
+                passes = candidate.Score >= heuristicThreshold;
+            }
+
+            if (passes) filtered.Add(candidate);
         }
         if (filtered.Count == 0)
             filtered.Add(new BoundaryCandidate(0, "Full Program", "AutoClipper fallback clip", 1));
