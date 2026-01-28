@@ -41,7 +41,7 @@ text:
     
     # THE "ENOUGH THINKING" STRUCTURAL RULES
     1. **Sign-off Hard Stop**: Phrases like "Global News" or a reporter's name followed by "reports" mark a HARD STOP. Terminate at that sentence.
-    2. **Category Reset (Geographic Pivot)**: A shift in the primary subject location (e.g., finishing a report on a Toronto blizzard to start a new report on New York City fatalities) MUST trigger a new News boundary.
+    2. **Category Reset (Geographic Pivot)**: A shift in the primary subject location (e.g., finishing a report on a Toronto blizzard to start a new report on NYC fatalities) MUST trigger a new News boundary.
        - *Contextual Exception*: Do not split if the location is merely context (e.g., "flights from Toronto to NYC").
     3. **Category Reset (Time-Check)**: Any sentence mentioning current station time (e.g., "Global News time 8:11") is a mandatory reset.
     4. **Category Reset (Introductory Leads)**: Handoffs like "Now the business news" or "Top story" are mandatory transition markers that override thematic flow.
